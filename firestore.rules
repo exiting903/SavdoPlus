@@ -1,0 +1,179 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: /users/{userId}
+    // Fields:
+    //   - full_name: string (required)
+    //   - email: string (required, format: email)
+    //   - role: string (required, enum: ["owner", "seller"])
+    //   - shop_id: string (optional)
+    //
+    // Collection: /shops/{shopId}
+    // Fields:
+    //   - name: string (required)
+    //   - owner_id: string (required)
+    //
+    // Collection: /products/{productId}
+    // Fields:
+    //   - shop_id: string (required)
+    //   - name: string (required)
+    //   - category: string (required)
+    //   - selling_price: number (required, positive)
+    //   - purchase_price: number (optional, positive)
+    //   - quantity: number (required, non-negative)
+    //   - unit: string (required)
+    //   - barcode: string (optional)
+    //   - min_stock_threshold: number (required, non-negative)
+    //
+    // Collection: /sales/{saleId}
+    // Fields:
+    //   - shop_id: string (required)
+    //   - product_id: string (required)
+    //   - product_name_snapshot: string (required)
+    //   - quantity: number (required, positive)
+    //   - unit_price_snapshot: number (required, positive)
+    //   - total_amount: number (required, positive)
+    //   - sold_by: string (required)
+    //   - reversed: boolean (optional)
+    //
+    // Collection: /inventory_adjustments/{adjId}
+    // Fields:
+    //   - shop_id: string (required)
+    //   - product_id: string (required)
+    //   - type: string (required, enum: ["restock", "correction", "damaged", "manual"])
+    //   - quantity_change: number (required)
+    //   - note: string (optional)
+    //   - adjusted_by: string (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "mukhammadaziznormatov@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isShopMember(shopId) {
+      return isAuthenticated() && getUserData().shop_id == shopId;
+    }
+
+    function isShopOwner(shopId) {
+      return isAuthenticated() && 
+             getUserData().role == 'owner' && 
+             getUserData().shop_id == shopId;
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasRequiredFields(['full_name', 'email', 'role']) &&
+             data.full_name is string && data.full_name.size() > 0 && data.full_name.size() < 100 &&
+             isValidEmail(data.email) &&
+             data.role in ['owner', 'seller'];
+    }
+
+    function isValidShop(data) {
+      return hasRequiredFields(['name', 'owner_id']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.owner_id == request.auth.uid;
+    }
+
+    function isValidProduct(data) {
+      return hasRequiredFields(['shop_id', 'name', 'category', 'selling_price', 'quantity', 'unit', 'min_stock_threshold']) &&
+             data.shop_id is string &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.selling_price is number && data.selling_price >= 0 &&
+             data.quantity is number && data.quantity >= 0 &&
+             data.min_stock_threshold is number && data.min_stock_threshold >= 0;
+    }
+
+    function isValidSale(data) {
+      return hasRequiredFields(['shop_id', 'product_id', 'product_name_snapshot', 'quantity', 'unit_price_snapshot', 'total_amount', 'sold_by']) &&
+             data.shop_id is string &&
+             data.product_id is string &&
+             data.quantity is number && data.quantity > 0 &&
+             data.total_amount is number && data.total_amount >= 0 &&
+             data.sold_by == request.auth.uid;
+    }
+
+    function isValidAdjustment(data) {
+      return hasRequiredFields(['shop_id', 'product_id', 'type', 'quantity_change', 'adjusted_by']) &&
+             data.shop_id is string &&
+             data.product_id is string &&
+             data.type in ["restock", "correction", "damaged", "manual"] &&
+             data.quantity_change is number &&
+             data.adjusted_by == request.auth.uid;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && (isOwner(userId) || isAdmin());
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) && (isOwner(userId) || isAdmin()) && 
+                    (request.resource.data.role == resource.data.role || isAdmin());
+    }
+
+    match /shops/{shopId} {
+      allow read: if isAuthenticated() && (isShopMember(shopId) || isAdmin());
+      allow create: if isAuthenticated() && isValidShop(request.resource.data);
+      allow update: if isAuthenticated() && isShopOwner(shopId) && isValidShop(request.resource.data);
+    }
+
+    match /products/{productId} {
+      allow read: if isAuthenticated() && (isShopMember(resource.data.shop_id) || isAdmin());
+      allow create: if isAuthenticated() && isShopOwner(request.resource.data.shop_id) && isValidProduct(request.resource.data);
+      allow update: if isAuthenticated() && isShopMember(resource.data.shop_id) && isValidProduct(request.resource.data) &&
+                    (isShopOwner(resource.data.shop_id) || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['quantity'])));
+      allow delete: if isAuthenticated() && isShopOwner(resource.data.shop_id);
+    }
+
+    match /sales/{saleId} {
+      allow read: if isAuthenticated() && (isShopMember(resource.data.shop_id) || isAdmin());
+      allow create: if isAuthenticated() && isShopMember(request.resource.data.shop_id) && isValidSale(request.resource.data);
+      allow update: if isAuthenticated() && isShopOwner(resource.data.shop_id) && isValidSale(request.resource.data);
+    }
+
+    match /inventory_adjustments/{adjId} {
+      allow read: if isAuthenticated() && (isShopMember(resource.data.shop_id) || isAdmin());
+      allow create: if isAuthenticated() && isShopOwner(request.resource.data.shop_id) && isValidAdjustment(request.resource.data);
+    }
+  }
+}

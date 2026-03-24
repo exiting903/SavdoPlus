@@ -1,0 +1,80 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role and shop association",
+      "type": "object",
+      "properties": {
+        "full_name": { "type": "string", "description": "Full name of the user" },
+        "email": { "type": "string", "format": "email", "description": "Email address" },
+        "role": { "type": "string", "enum": ["owner", "seller"], "description": "User role" },
+        "shop_id": { "type": "string", "description": "ID of the shop the user belongs to" }
+      },
+      "required": ["full_name", "email", "role"]
+    },
+    "Shop": {
+      "title": "Shop",
+      "description": "Shop details",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the shop" },
+        "owner_id": { "type": "string", "description": "UID of the shop owner" }
+      },
+      "required": ["name", "owner_id"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Inventory item",
+      "type": "object",
+      "properties": {
+        "shop_id": { "type": "string", "description": "ID of the shop" },
+        "name": { "type": "string", "description": "Product name" },
+        "category": { "type": "string", "description": "Product category" },
+        "selling_price": { "type": "number", "description": "Price to sell" },
+        "purchase_price": { "type": "number", "description": "Price bought at" },
+        "quantity": { "type": "number", "description": "Current stock" },
+        "unit": { "type": "string", "description": "Unit (kg, piece, etc)" },
+        "barcode": { "type": "string", "description": "Optional barcode" },
+        "min_stock_threshold": { "type": "number", "description": "Low stock alert level" }
+      },
+      "required": ["shop_id", "name", "selling_price", "quantity", "unit"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "Sales record",
+      "type": "object",
+      "properties": {
+        "shop_id": { "type": "string", "description": "ID of the shop" },
+        "product_id": { "type": "string", "description": "ID of the product" },
+        "product_name_snapshot": { "type": "string", "description": "Name at time of sale" },
+        "quantity": { "type": "number", "description": "Quantity sold" },
+        "unit_price_snapshot": { "type": "number", "description": "Price at time of sale" },
+        "total_amount": { "type": "number", "description": "Total sale amount" },
+        "sold_by": { "type": "string", "description": "UID of the seller" },
+        "reversed": { "type": "boolean", "description": "Whether sale was reversed" }
+      },
+      "required": ["shop_id", "product_id", "quantity", "total_amount", "sold_by"]
+    },
+    "InventoryAdjustment": {
+      "title": "InventoryAdjustment",
+      "description": "Stock change log",
+      "type": "object",
+      "properties": {
+        "shop_id": { "type": "string", "description": "ID of the shop" },
+        "product_id": { "type": "string", "description": "ID of the product" },
+        "type": { "type": "string", "enum": ["restock", "correction", "damaged", "manual"], "description": "Type of adjustment" },
+        "quantity_change": { "type": "number", "description": "Amount changed" },
+        "note": { "type": "string", "description": "Reason for adjustment" },
+        "adjusted_by": { "type": "string", "description": "UID of the user" }
+      },
+      "required": ["shop_id", "product_id", "type", "quantity_change", "adjusted_by"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "User", "description": "User profiles" },
+    "/shops/{shopId}": { "schema": "Shop", "description": "Shop details" },
+    "/products/{productId}": { "schema": "Product", "description": "Product inventory" },
+    "/sales/{saleId}": { "schema": "Sale", "description": "Sales records" },
+    "/inventory_adjustments/{adjId}": { "schema": "InventoryAdjustment", "description": "Stock adjustments" }
+  }
+}
